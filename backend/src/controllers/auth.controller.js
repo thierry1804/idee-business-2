@@ -5,6 +5,12 @@ import { authenticate } from '../middleware/auth.js';
  * Créer ou récupérer un utilisateur depuis Firebase UID
  */
 export const register = async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ 
+      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    });
+  }
+
   try {
     const { company_name, phone } = req.body;
     const firebase_uid = req.user.uid;
@@ -63,6 +69,12 @@ export const register = async (req, res) => {
  * Login - récupère l'utilisateur depuis Firebase UID
  */
 export const login = async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ 
+      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    });
+  }
+
   try {
     const firebase_uid = req.user.uid;
 
@@ -117,6 +129,12 @@ export const login = async (req, res) => {
  * Récupérer le profil de l'utilisateur actuel
  */
 export const getMe = async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ 
+      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    });
+  }
+
   try {
     const firebase_uid = req.user.uid;
 

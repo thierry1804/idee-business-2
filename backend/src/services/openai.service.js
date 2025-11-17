@@ -4,9 +4,20 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Vérifier si OpenAI est configuré
+const openaiApiKey = process.env.OPENAI_API_KEY;
+const isOpenAIConfigured = openaiApiKey && !openaiApiKey.includes('your_');
+
+let openai = null;
+if (isOpenAIConfigured) {
+  openai = new OpenAI({
+    apiKey: openaiApiKey,
+  });
+  console.log('✅ OpenAI initialisé avec succès');
+} else {
+  console.warn('⚠️ OpenAI non configuré - les variables d\'environnement sont manquantes');
+  console.warn('📝 Veuillez configurer OPENAI_API_KEY dans le fichier .env');
+}
 
 const MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
@@ -152,6 +163,10 @@ class OpenAIService {
    * Générer une réponse avec OpenAI
    */
   async generateResponse(conversationId, userId, userMessage, language = 'fr') {
+    if (!openai) {
+      throw new Error('OpenAI non configuré. Veuillez configurer OPENAI_API_KEY dans le fichier .env');
+    }
+
     try {
       // Construire le contexte
       const context = await this.buildContext(conversationId, userId, language);

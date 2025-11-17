@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authService } from '../services/firebase.js';
 import api from '../services/api.js';
@@ -8,7 +8,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [firebaseConfigured, setFirebaseConfigured] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setFirebaseConfigured(authService.isConfigured());
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -16,14 +21,26 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const { token } = await authService.login(email, password);
+      const { token, user } = await authService.login(email, password);
       
+      if (!token) {
+        throw new Error('Token non reçu après connexion');
+      }
+      
+      // Utiliser le token immédiatement après l'obtention
       // Créer ou récupérer l'utilisateur dans notre backend
-      await api.post('/api/v1/auth/login');
+      const response = await api.post('/api/v1/auth/login', {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       
+      console.log('✅ Connexion réussie:', response.data);
       navigate('/');
     } catch (err) {
-      setError(err.message || 'Erreur de connexion');
+      console.error('❌ Erreur de connexion:', err);
+      const errorMessage = err.response?.data?.details || err.response?.data?.error || err.message || 'Erreur de connexion';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -37,7 +54,11 @@ export default function Login() {
       const { token } = await authService.loginWithGoogle();
       
       // Créer ou récupérer l'utilisateur dans notre backend
-      await api.post('/api/v1/auth/login');
+      await api.post('/api/v1/auth/login', {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       
       navigate('/');
     } catch (err) {
@@ -61,6 +82,15 @@ export default function Login() {
             </Link>
           </p>
         </div>
+        
+        {!firebaseConfigured && (
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
+            <p className="font-medium">⚠️ Configuration Firebase requise</p>
+            <p className="text-sm mt-1">
+              Veuillez configurer les variables d'environnement Firebase dans le fichier <code className="bg-yellow-100 px-1 rounded">.env</code>
+            </p>
+          </div>
+        )}
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
@@ -107,7 +137,7 @@ export default function Login() {
           <div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !firebaseConfigured}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
             >
               {loading ? 'Connexion...' : 'Se connecter'}
@@ -128,7 +158,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                disabled={loading}
+                disabled={loading || !firebaseConfigured}
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
               >
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
