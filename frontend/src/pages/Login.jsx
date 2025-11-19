@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authService } from '../services/firebase.js';
 import api from '../services/api.js';
@@ -7,17 +7,65 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [errorKey, setErrorKey] = useState(0); // Pour forcer le re-render
   const [loading, setLoading] = useState(false);
   const [firebaseConfigured, setFirebaseConfigured] = useState(true);
   const navigate = useNavigate();
+  const errorRef = useRef('');
 
   useEffect(() => {
     setFirebaseConfigured(authService.isConfigured());
+    
+    // Récupérer l'erreur depuis sessionStorage au montage
+    const savedError = sessionStorage.getItem('loginError');
+    if (savedError) {
+      setError(savedError);
+      sessionStorage.removeItem('loginError');
+    }
   }, []);
+
+  // Debug: vérifier les changements d'erreur
+  useEffect(() => {
+    if (error) {
+      console.log('🔴 Error state changé:', error);
+      // Sauvegarder l'erreur dans sessionStorage
+      sessionStorage.setItem('loginError', error);
+      
+      // Forcer l'affichage via DOM direct
+      const updateErrorDisplay = () => {
+        const errorDiv = document.querySelector('[data-error-display]');
+        if (errorDiv) {
+          errorDiv.style.display = 'block';
+          errorDiv.classList.remove('hidden');
+          const errorText = errorDiv.querySelector('[data-error-text]');
+          if (errorText) {
+            errorText.textContent = error;
+          }
+        }
+      };
+      
+      // Mettre à jour immédiatement et régulièrement
+      updateErrorDisplay();
+      const interval = setInterval(updateErrorDisplay, 100);
+      
+      // Nettoyer après 5 secondes
+      setTimeout(() => {
+        clearInterval(interval);
+      }, 5000);
+    }
+  }, [error]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('🔵 handleSubmit appelé, réinitialisation de l\'erreur');
     setError('');
+    sessionStorage.removeItem('loginError');
+    // Nettoyer aussi l'affichage DOM
+    const errorDiv = document.querySelector('[data-error-display]');
+    if (errorDiv) {
+      errorDiv.style.display = 'none';
+      errorDiv.classList.add('hidden');
+    }
     setLoading(true);
 
     try {
@@ -27,8 +75,12 @@ export default function Login() {
         throw new Error('Token non reçu après connexion');
       }
       
+      console.log('🔑 Token obtenu, longueur:', token.length);
+      console.log('🔑 Token obtenu à:', new Date().toISOString());
+      
       // Utiliser le token immédiatement après l'obtention
       // Créer ou récupérer l'utilisateur dans notre backend
+      // Utiliser directement le token au lieu de passer par l'intercepteur pour éviter les problèmes de cache
       const response = await api.post('/api/v1/auth/login', {}, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -39,8 +91,64 @@ export default function Login() {
       navigate('/');
     } catch (err) {
       console.error('❌ Erreur de connexion:', err);
-      const errorMessage = err.response?.data?.details || err.response?.data?.error || err.message || 'Erreur de connexion';
+      console.error('❌ Détails de l\'erreur:', {
+        response: err.response?.data,
+        status: err.response?.status,
+        message: err.message
+      });
+      
+      let errorMessage = 'Erreur de connexion';
+      
+      if (err.response) {
+        // Erreur HTTP
+        const status = err.response.status;
+        const data = err.response.data;
+        
+        if (data) {
+          // Prioriser le message explicite, puis les détails, puis l'erreur générique
+          errorMessage = data.message || data.details || data.error || `Erreur ${status}`;
+          
+          // Si c'est une erreur 401 avec des détails spécifiques
+          if (status === 401 && data.code) {
+            if (data.code === 'auth/argument-error') {
+              errorMessage = 'Erreur d\'authentification. Veuillez vérifier vos identifiants et réessayer.';
+            } else if (data.code === 'auth/id-token-expired') {
+              errorMessage = 'Erreur d\'authentification. Veuillez réessayer de vous connecter.';
+            } else {
+              errorMessage = 'Erreur d\'authentification. Veuillez vérifier vos identifiants.';
+            }
+          } else if (status === 401) {
+            // Erreur 401 générique lors d'une connexion
+            errorMessage = 'Email ou mot de passe incorrect, ou problème de configuration serveur.';
+          }
+        } else {
+          // Si pas de data, utiliser le status
+          if (status === 401) {
+            errorMessage = 'Email ou mot de passe incorrect.';
+          } else if (status === 403) {
+            errorMessage = 'Accès refusé';
+          } else {
+            errorMessage = `Erreur ${status}: ${err.response.statusText || 'Erreur serveur'}`;
+          }
+        }
+      } else if (err.message) {
+        // Erreur Firebase ou autre
+        if (err.message.includes('auth/invalid-credential')) {
+          errorMessage = 'Email ou mot de passe incorrect';
+        } else if (err.message.includes('auth/user-not-found')) {
+          errorMessage = 'Aucun compte trouvé avec cet email';
+        } else if (err.message.includes('auth/wrong-password')) {
+          errorMessage = 'Mot de passe incorrect';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      console.log('🔴 Message d\'erreur défini:', errorMessage);
+      errorRef.current = errorMessage;
       setError(errorMessage);
+      setErrorKey(prev => prev + 1); // Forcer le re-render
+      console.log('🔴 State error après setError:', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -93,11 +201,15 @@ export default function Login() {
         )}
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
-            </div>
-          )}
+          {/* Affichage d'erreur persistant - visible même après re-render Vite */}
+          <div 
+            data-error-display
+            className={`bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 ${error && error.trim() !== '' ? '' : 'hidden'}`}
+            role="alert"
+            style={{ display: error && error.trim() !== '' ? 'block' : 'none' }}
+          >
+            <strong>Erreur :</strong> <span data-error-text>{error}</span>
+          </div>
           
           <div className="rounded-md shadow-sm -space-y-px">
             <div>

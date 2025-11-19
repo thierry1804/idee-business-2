@@ -83,9 +83,12 @@ export const authService = {
     }
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      // Forcer le rafraîchissement du token pour obtenir un token frais
+      const token = await userCredential.user.getIdToken(true);
+      console.log('✅ Token Firebase obtenu, longueur:', token.length);
       return {
         user: userCredential.user,
-        token: await userCredential.user.getIdToken(),
+        token: token,
       };
     } catch (error) {
       throw new Error(error.message);
@@ -145,13 +148,14 @@ export const authService = {
   /**
    * Obtenir le token actuel
    */
-  async getCurrentToken() {
+  async getCurrentToken(forceRefresh = false) {
     if (!auth) {
       return null;
     }
     const user = auth.currentUser;
     if (user) {
-      return await user.getIdToken();
+      // Forcer le rafraîchissement si demandé pour éviter les tokens expirés
+      return await user.getIdToken(forceRefresh);
     }
     return null;
   },

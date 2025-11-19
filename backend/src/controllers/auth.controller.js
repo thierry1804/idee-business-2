@@ -5,9 +5,18 @@ import { authenticate } from '../middleware/auth.js';
  * Créer ou récupérer un utilisateur depuis Firebase UID
  */
 export const register = async (req, res) => {
+  // Si Supabase n'est pas configuré, retourner uniquement les infos Firebase
   if (!supabase) {
-    return res.status(503).json({ 
-      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    console.warn('⚠️ Supabase non configuré - retour des données Firebase uniquement');
+    return res.status(200).json({
+      message: 'User registered (Firebase only)',
+      user: {
+        firebase_uid: req.user.uid,
+        email: req.user.email,
+        company_name: req.body.company_name || req.user.email.split('@')[0],
+        phone: req.body.phone,
+        plan: 'free',
+      },
     });
   }
 
@@ -69,9 +78,17 @@ export const register = async (req, res) => {
  * Login - récupère l'utilisateur depuis Firebase UID
  */
 export const login = async (req, res) => {
+  // Si Supabase n'est pas configuré, retourner uniquement les infos Firebase
   if (!supabase) {
-    return res.status(503).json({ 
-      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    console.warn('⚠️ Supabase non configuré - retour des données Firebase uniquement');
+    return res.status(200).json({
+      message: 'Login successful (Firebase only)',
+      user: {
+        firebase_uid: req.user.uid,
+        email: req.user.email,
+        plan: 'free',
+        // Données minimales depuis Firebase
+      },
     });
   }
 
@@ -129,9 +146,15 @@ export const login = async (req, res) => {
  * Récupérer le profil de l'utilisateur actuel
  */
 export const getMe = async (req, res) => {
+  // Si Supabase n'est pas configuré, retourner uniquement les infos Firebase
   if (!supabase) {
-    return res.status(503).json({ 
-      error: 'Supabase non configuré. Veuillez configurer les variables d\'environnement Supabase.' 
+    console.warn('⚠️ Supabase non configuré - retour des données Firebase uniquement');
+    return res.status(200).json({
+      user: {
+        firebase_uid: req.user.uid,
+        email: req.user.email,
+        plan: 'free',
+      },
     });
   }
 

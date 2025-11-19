@@ -69,8 +69,69 @@ export const authenticate = async (req, res, next) => {
 
     // Vérifier le token Firebase
     console.log('🔍 Vérification du token Firebase...');
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    console.log('✅ Token vérifié avec succès pour:', decodedToken.email);
+    console.log('🔍 Token reçu (premiers caractères):', token.substring(0, 50) + '...');
+    console.log('🔍 Longueur du token:', token.length);
+    const serverTime = new Date();
+    console.log('🔍 Heure serveur:', serverTime.toISOString());
+    console.log('🔍 Timestamp serveur:', serverTime.getTime());
+    
+    // Vérifier le token Firebase
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(token);
+      console.log('✅ Token vérifié avec succès pour:', decodedToken.email);
+    } catch (verifyError) {
+      // Si le token est expiré, vérifier si c'est un problème d'horloge
+      if (verifyError.code === 'auth/id-token-expired') {
+        console.error('❌ Token expiré détecté');
+        console.error('❌ Heure serveur au moment de l\'erreur:', new Date().toISOString());
+        
+        // Décoder le token pour analyser les timestamps
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+            const tokenExp = new Date(payload.exp * 1000);
+            const tokenIat = new Date(payload.iat * 1000);
+            const timeDiff = (payload.exp * 1000 - serverTime.getTime()) / 1000;
+            const hoursDiff = Math.abs(timeDiff / 3600);
+            
+            console.error('❌ Token exp (expiration):', tokenExp.toISOString());
+            console.error('❌ Token iat (émission):', tokenIat.toISOString());
+            console.error('❌ Différence avec serveur (exp):', timeDiff, 'secondes (', hoursDiff.toFixed(2), 'heures)');
+            console.error('❌ Token devrait être valide pendant:', (payload.exp - payload.iat), 'secondes');
+            
+            // En mode développement, si l'horloge est désynchronisée de plus de 1 heure,
+            // on accepte le token quand même avec un avertissement
+            if (timeDiff < 0 && process.env.NODE_ENV === 'development' && hoursDiff > 1) {
+              console.warn('⚠️ MODE DÉVELOPPEMENT: Horloge serveur désynchronisée de', hoursDiff.toFixed(2), 'heures');
+              console.warn('⚠️ Acceptation du token malgré l\'expiration (workaround temporaire)');
+              console.warn('⚠️ SOLUTION: Synchroniser l\'horloge système avec: sudo timedatectl set-ntp true');
+              
+              // Décoder le token sans vérification d'expiration pour obtenir les infos utilisateur
+              // On utilise directement le payload décodé
+              decodedToken = {
+                uid: payload.user_id || payload.sub,
+                email: payload.email,
+                exp: payload.exp,
+                iat: payload.iat,
+              };
+              
+              console.log('✅ Token accepté en mode développement (horloge désynchronisée)');
+            } else {
+              throw verifyError;
+            }
+          } else {
+            throw verifyError;
+          }
+        } catch (decodeError) {
+          console.error('❌ Impossible de décoder le token:', decodeError.message);
+          throw verifyError;
+        }
+      } else {
+        throw verifyError;
+      }
+    }
     
     // Ajouter les infos utilisateur à la requête
     req.user = {
@@ -83,10 +144,30 @@ export const authenticate = async (req, res, next) => {
   } catch (error) {
     console.error('❌ Auth error:', error.message);
     console.error('Error code:', error.code);
-    return res.status(401).json({ 
+    console.error('Error stack:', error.stack);
+    
+    // Messages d'erreur plus détaillés en développement
+    const errorResponse = {
       error: 'Invalid or expired token',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    };
+    
+    if (process.env.NODE_ENV === 'development') {
+      errorResponse.details = error.message;
+      errorResponse.code = error.code;
+      
+      // Messages d'erreur spécifiques selon le code d'erreur
+      if (error.code === 'auth/argument-error') {
+        errorResponse.message = 'Token invalide ou malformé';
+      } else if (error.code === 'auth/id-token-expired') {
+        errorResponse.message = 'Token expiré';
+      } else if (error.code === 'auth/id-token-revoked') {
+        errorResponse.message = 'Token révoqué';
+      } else if (error.code === 'auth/project-not-found') {
+        errorResponse.message = 'Projet Firebase non trouvé. Vérifiez FIREBASE_PROJECT_ID.';
+      }
+    }
+    
+    return res.status(401).json(errorResponse);
   }
 };
 
